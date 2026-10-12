@@ -38,7 +38,7 @@ func mockConfig(rt roundTripFunc) Config {
 
 func mustClient(t *testing.T, cfg Config) *Client {
 	t.Helper()
-	c, err := New(context.Background(), cfg)
+	c, err := NewWithContext(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestConfigurationValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := base
 			tc.change(&cfg)
-			c, err := New(context.Background(), cfg)
+			c, err := NewWithContext(context.Background(), cfg)
 			if c != nil || !errors.Is(err, ErrValidation) {
 				t.Fatal("wanted validation error")
 			}
@@ -140,7 +140,7 @@ func TestConfigurationValidation(t *testing.T) {
 		t.Run(raw, func(t *testing.T) {
 			cfg := base
 			cfg.BaseURL = raw
-			_, err := New(context.Background(), cfg)
+			_, err := NewWithContext(context.Background(), cfg)
 			if !errors.Is(err, ErrValidation) {
 				t.Fatal("wanted validation error")
 			}
@@ -151,7 +151,7 @@ func TestConfigurationValidation(t *testing.T) {
 			t.Errorf("valid base URL rejected: %s", raw)
 		}
 	}
-	if _, err := New(nil, base); !errors.Is(err, ErrValidation) {
+	if _, err := NewWithContext(nil, base); !errors.Is(err, ErrValidation) {
 		t.Fatal("nil context accepted")
 	}
 }
@@ -187,7 +187,7 @@ func TestConstructorResponses(t *testing.T) {
 				calls.Add(1)
 				return mockResponse(tc.status, tc.body), nil
 			})
-			c, err := New(context.Background(), cfg)
+			c, err := NewWithContext(context.Background(), cfg)
 			if c != nil || !errors.Is(err, ErrAuthentication) || !errors.Is(err, tc.kind) || calls.Load() != 1 {
 				t.Fatalf("bad constructor error: %v, calls %d", err, calls.Load())
 			}
@@ -350,7 +350,7 @@ func TestAuthenticationRedirect(t *testing.T) {
 				w.WriteHeader(status)
 			}))
 			defer server.Close()
-			_, err := New(context.Background(), Config{ClientID: "fake", ClientSecret: "fake", BaseURL: server.URL})
+			_, err := NewWithContext(context.Background(), Config{ClientID: "fake", ClientSecret: "fake", BaseURL: server.URL})
 			if !errors.Is(err, ErrAuthentication) {
 				t.Fatal("auth redirect accepted")
 			}
@@ -494,13 +494,13 @@ func TestContextTimeouts(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		cfg := mockConfig(func(r *http.Request) (*http.Response, error) { <-r.Context().Done(); return nil, r.Context().Err() })
 		start := time.Now()
-		c, err := New(context.Background(), cfg)
+		c, err := NewWithContext(context.Background(), cfg)
 		if c != nil || !errors.Is(err, ErrAuthentication) || !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != RequestTimeout {
 			t.Fatal("constructor timeout incorrect")
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		c, err = New(ctx, cfg)
+		c, err = NewWithContext(ctx, cfg)
 		if c != nil || !errors.Is(err, context.Canceled) {
 			t.Fatal("constructor cancellation incorrect")
 		}

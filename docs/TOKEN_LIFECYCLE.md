@@ -6,18 +6,30 @@ issuance behavior. Record this as an integration uncertainty.
 
 ## Initialization and expiry
 
-1. `New(ctx, cfg)` validates config and makes initial authentication within the
-   caller's context and the SDK request timeout.
-2. Require provider success, nonempty access token, and a positive integer
+1. `New(config ...Config) *Client` accepts zero or one config, validates locally,
+   stores any configuration error for operations, and makes no network request.
+   With no config, capture environment credentials once. Explicit config never
+   falls back to environment. More than one config reports `ErrValidation`,
+   field `Config`. No worker or timer runs before a token-requiring operation.
+2. `NewWithContext(ctx, config) (*Client, error)` validates and authenticates
+   immediately within the initialization context and configured request timeout.
+   Return errors directly and leave no active worker/timer on failure.
+3. Lazy first use joins/starts the same auth flight used by renewal and manual
+   refresh. Shared auth uses the client-owned context; caller cancellation ends
+   only its wait. An earlier caller deadline wins for its wait or service request,
+   without canceling authentication needed by other callers.
+4. Require provider success, nonempty access token, and a positive integer
    lifetime in seconds. Reject missing, fractional, zero, negative, or overflowing
-   lifetime values. Validate safe conversion to `time.Duration`.
-3. Conservatively compute `expiresAt = authRequestStartedAt + lifetime`. This
-   avoids adding response latency to the lifetime. Reject a response whose usable
-   lifetime is already exhausted on arrival.
-4. Install the token and deadline atomically and start one client lifecycle loop.
-   A failed constructor leaves no active goroutine or timer.
-5. The constructor context only governs initialization. After success, the SDK
-   uses its own cancelable lifecycle context, stopped by `Close`.
+   lifetimes. Conservatively compute `expiresAt = authRequestStartedAt + lifetime`;
+   reject responses exhausted on arrival or installation.
+5. Install the token/deadlines atomically and start exactly one lifecycle loop
+   after first success. Register workers while shutdown is excluded by the state
+   lock, so concurrent lazy initialization and `Close` cannot leak workers or race
+   with `WaitGroup.Wait`. Closing during auth prevents token installation.
+6. `NewWithContext`'s context controls initialization only. Both constructors use
+   an independent cancelable lifecycle context stopped by `Close`. `Config.Timeout`
+   bounds every HTTP request, including injected clients without mutation; zero
+   uses the existing 30-second default and negative values are invalid.
 
 Default refresh lead is 60 seconds. Effective lead is
 `min(configuredLead, lifetime / 2)` so a short-lived token cannot produce an
@@ -55,8 +67,13 @@ periodic busy poll. Tests should control time without waiting an hour.
 ## Renewal failures
 
 Use finite auth request timeouts and capped backoff for transient failures.
-Define and document exact bounds; defaults such as 1, 2, 4, 8 seconds, capped at
-30 seconds, are acceptable. Retry authentication only, never SMS/top-up.
+Use delays of 1, 2, 4, 8, 16, then 30 seconds, retaining the 30-second cap.
+Retry authentication only, never SMS/top-up.
+
+Before first lazy authentication success, there is no automatic retry worker.
+Transient failures establish cooldown; later calls can attempt after cooldown.
+Terminal failures require explicit manual recovery. After success, the idle
+lifecycle retries transient failures automatically.
 
 When a retry is scheduled before expiry, account for the remaining validity; after
 expiry, retain bounded backoff instead of a zero-delay loop. A renewed token must
@@ -76,7 +93,8 @@ must not block the renewal loop indefinitely.
 
 ## Shutdown
 
-`Close()` is idempotent and safe under concurrent calls. It marks the client
+`Close()` is idempotent and safe before first use and under concurrent calls.
+Closing an unused client prevents any later authentication. It marks the client
 closed, cancels pending lifecycle auth work, stops the timer, unblocks refresh
 waiters, and joins the client-owned lifecycle goroutine. No new renewal or service
 submission may start after closure. Already-started service calls may complete
@@ -91,7 +109,10 @@ RoundTrippers must honor cancellation and must not retry service POSTs.
 
 ```mermaid
 flowchart TD
-    New["New: authenticate"] --> Initial{"Valid auth response?"}
+    New["New: capture config; no network"] --> First["First token-requiring operation"]
+    First --> Auth["One shared initial auth request"]
+    Auth --> Initial{"Valid auth response?"}
+    Eager["NewWithContext: authenticate now"] --> Initial
     Initial -->|No| Fail["Return error; no worker"]
     Initial -->|Yes| Ready["Cache token and expiry"]
     Ready --> Wait["Wait until expiry minus lead"]
@@ -102,7 +123,9 @@ flowchart TD
     Retry --> Refresh
     Result -->|Credentials rejected| Halt["Retain valid token; stop retry churn"]
     Halt -->|Explicit refresh| Refresh
-    Wait -->|Close| Stop["Cancel work and stop"]
+    New -->|Close before use| Stop["Cancel work and stop"]
+    Auth -->|Close| Stop
+    Wait -->|Close| Stop
     Refresh -->|Close| Stop
     Retry -->|Close| Stop
     Halt -->|Close| Stop

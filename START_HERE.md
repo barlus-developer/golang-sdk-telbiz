@@ -44,7 +44,8 @@ remaining blockers. Do not publish releases or push changes unless asked.
 
 - Module: `github.com/barlus-developer/golang-sdk-telbiz`; Go package: `telbiz`.
 - ใช้ Client ID และ Secret เดิมขอ access token ใหม่ผ่าน Auth API
-- `New(ctx, Config)` ขอ token ครั้งแรกและเริ่ม background renewal โดยอัตโนมัติ
+- `New()` / `New(Config)` creates a lazy client; first token use authenticates.
+- `NewWithContext(ctx, Config)` authenticates immediately; both renew after first success.
 - Token อายุปกติ 3,600 วินาที: ต่ออายุประมาณนาทีที่ 59
 - Caller ต้องเรียก `Close()` เมื่อเลิกใช้ client
 - ครอบคลุม Auth, SMS และเติมเงินตามเอกสารที่แนบ

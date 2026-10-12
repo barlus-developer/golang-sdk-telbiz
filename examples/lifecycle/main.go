@@ -24,7 +24,7 @@ func run() error {
 	shutdown, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	startup, cancel := context.WithTimeout(shutdown, time.Minute)
-	client, err := telbiz.New(startup, telbiz.Config{ClientID: os.Getenv("TELBIZ_CLIENT_ID"), ClientSecret: os.Getenv("TELBIZ_CLIENT_SECRET")})
+	client, err := telbiz.NewWithContext(startup, telbiz.Config{ClientID: os.Getenv("TELBIZ_CLIENT_ID"), ClientSecret: os.Getenv("TELBIZ_CLIENT_SECRET")})
 	cancel() // Successful initialization has an independent lifecycle.
 	if err != nil {
 		return err

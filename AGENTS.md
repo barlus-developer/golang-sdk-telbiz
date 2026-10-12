@@ -16,6 +16,18 @@ servers and `testing/synctest` fake time. `examples/` programs must be compiled,
 not executed with live credentials during checks. See `docs/TESTING.md` and the
 delivery checklist for validation evidence and `docs/API.md` for the public API.
 
+## Constructor contract
+
+`New(config ...Config) *Client` is lazy and accepts zero or one config. With zero,
+capture environment credentials; explicit config never falls back to environment.
+Defer invalid configuration to inspectable operation errors. `NewWithContext`
+validates and authenticates eagerly; its context governs initialization only.
+First-use auth shares the existing flight machinery with renewal/manual refresh;
+caller cancellation affects its wait only. Start the lifecycle worker after first
+success. `Close` must be safe before/during initialization and prevent later work.
+`Config.Timeout` bounds every HTTP request without mutating injected clients;
+zero uses 30 seconds and negative values are invalid. Preserve no service replay.
+
 ## Read first
 
 Read the existing repository instructions and inspect Git status before edits.

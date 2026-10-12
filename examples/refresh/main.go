@@ -20,7 +20,10 @@ func main() {
 func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	client, err := telbiz.New(ctx, telbiz.Config{ClientID: os.Getenv("TELBIZ_CLIENT_ID"), ClientSecret: os.Getenv("TELBIZ_CLIENT_SECRET")})
+	client, err := telbiz.NewWithContext(ctx, telbiz.Config{
+		ClientID: os.Getenv("TELBIZ_CLIENT_ID"), ClientSecret: os.Getenv("TELBIZ_CLIENT_SECRET"),
+		Timeout: 15 * time.Second,
+	})
 	if err != nil {
 		return err
 	}

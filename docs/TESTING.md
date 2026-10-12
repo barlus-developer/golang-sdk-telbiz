@@ -20,8 +20,8 @@ example uses a local mock and is executed by `go test`.
 
 ## Deterministic lifecycle tests
 
-`lifecycle_test.go` uses standard-library `testing/synctest` with fake time and
-in-memory RoundTrippers. Clock advances and `synctest.Wait` synchronize workers
+`constructor_test.go` and `lifecycle_test.go` use standard-library
+`testing/synctest` with fake time and in-memory RoundTrippers. Clock advances and `synctest.Wait` synchronize workers
 without sleeping through real token lifetimes. No testing-only public hooks are
 exported. `client_test.go` also uses real local servers for request/response wire,
 redirect, and connection-loss tests.
@@ -29,6 +29,9 @@ redirect, and connection-loss tests.
 | Contract from [TEST_PLAN](TEST_PLAN.md) | Test evidence |
 |---|---|
 | Constructor/schema/expiry validation | `TestWireContract`, `TestConfigurationValidation`, `TestConstructorResponses`, `TestContextTimeouts` |
+| Lazy/environment/explicit config, deferred errors, first-use cancellation and idle renewal | `TestNewEnvironmentAndExplicitConfig`, `TestNewDeferredConfigurationErrors`, `TestNewConcurrentFirstUseAndIdleRenewal`, `TestNewAuthenticationFailureAndRecovery`, `TestNewTransientFirstAuthenticationCooldown`, `TestNewInvalidOrCanceledOperationDoesNotAuthenticate` |
+| Configured auth/service/renewal timeout and earlier deadlines | `TestConfigTimeoutAuthentication`, `TestConfigTimeoutServicesAndRenewal` |
+| Close before/during first use and initialization/shutdown races | `TestNewCloseBeforeAndDuringInitialization`, `TestNewFirstUseRacesClose` |
 | Default/configurable/short-lifetime idle renewal | `TestIdleRenewalSchedule`, `TestRenewalUsesNewLifetime` |
 | Conservative expiry, delayed-auth scheduling, and expiry at installation | `TestSlowAuthenticationScheduling`, `TestExpiredTokenNotInstalled` |
 | Old token remains usable, atomic replacement | `TestSharedRenewalAndWaitCancellation`, `TestTransientFailureBackoff`, `TestIdleRenewalSchedule` |

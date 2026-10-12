@@ -37,7 +37,9 @@ API compatibility unless an intentional breaking change is documented. Discuss
 public API and dependency changes in the PR description. Never invent provider
 routes or guarantees to complete a feature.
 
-For authentication changes, verify renewal scheduling, shared refresh, failure
+For constructor changes, cover lazy `New`, eager `NewWithContext`, explicit vs
+environment credentials, deferred errors, and per-request timeouts. For
+authentication changes, verify renewal scheduling, shared first-use/refresh, failure
 backoff, cancellation, and shutdown with race tests. For service changes, prove
 that a call does not automatically replay a billable POST.
 

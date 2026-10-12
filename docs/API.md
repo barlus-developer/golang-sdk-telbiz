@@ -7,25 +7,33 @@ private; there are no exported token strings or clock hooks.
 ## Client and configuration
 
 ```go
-func New(ctx context.Context, cfg Config) (*Client, error)
+func New(config ...Config) *Client
+func NewWithContext(ctx context.Context, config Config) (*Client, error)
 func (*Client) SendSMS(ctx context.Context, req SMSRequest) (*SMSResponse, error)
 func (*Client) Topup(ctx context.Context, req TopupRequest) (*TopupResponse, error)
 func (*Client) RefreshToken(ctx context.Context) error
 func (*Client) Close() error
 ```
 
-`New` validates and eagerly authenticates; successful clients renew automatically.
+`New` accepts zero or one config and performs no network request. Zero reads
+credentials from the environment once; one uses only explicit credentials.
+Configuration errors (including more than one config) surface through operations
+as `ErrValidation` with `Error.Field`. Authentication starts on the first token
+requirement; concurrent callers share it and cancel only their own waits.
+`NewWithContext` validates and authenticates immediately; its context controls
+initialization only. Both start idle renewal after the first authentication success.
 Service methods return a nonnil response only on trustworthy acceptance. They
 perform one service submission per invocation. `RefreshToken` joins/forces one
 renewal subject to cooldown. `Close` is idempotent. Clients support concurrent use;
 their zero value is unusable and initialized clients must not be copied.
 
 `Config` fields: `ClientID string`, `ClientSecret string`, `BaseURL string`,
-`HTTPClient *http.Client`, `RefreshBefore time.Duration`.
+`HTTPClient *http.Client`, `Timeout time.Duration`, `RefreshBefore time.Duration`.
 See [configuration defaults and ownership](USAGE.md#configuration).
 
 Constants: `DefaultBaseURL = "https://api.telbiz.la"`,
-`RequestTimeout = 30 * time.Second`.
+`RequestTimeout = 30 * time.Second` (the default for zero `Config.Timeout`).
+A negative timeout is invalid; positive values bound each HTTP request.
 
 ## Request and result models
 

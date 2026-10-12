@@ -10,20 +10,32 @@ reports `go1.27.1 linux/amd64`; no older-version compatibility is claimed.
 
 The SDK uses one root `telbiz` package with private transport, token state,
 clock/timer abstraction, and lifecycle coordination. It uses only the standard
-library. `New(ctx, Config)` follows the build specification; the installed Go
-design-patterns skill's general functional-options preference does not override
-this public API. There is no application framework or exported auth coordinator.
+library. The owner-requested `New(config ...Config)` and `NewWithContext(ctx,
+Config)` replace the earlier build specification's eager `New(ctx, Config)`.
+The installed Go design patterns skill's general functional-options preference
+does not override this API. The existing SDK was modified in place on `alpha-0.1`;
+discovery for this constructor update found a clean working tree. There is no application framework or exported auth coordinator.
 
 One state mutex protects token/deadline/generation replacement and admission.
-One lifecycle worker schedules timers, and at most one shared auth worker runs
+After first authentication success, one lifecycle worker schedules timers;
+at most one shared auth worker runs
 at a time. Waiters cancel independently. Worker registration and closure are
 serialized so `Close` can safely join all client-owned work. No state mutex is
 held during HTTP I/O. A service is considered started at its successful admission
 check; calls admitted before `Close` can finish afterward under their own context.
 This allows resource cleanup without taking ownership of caller service contexts.
 
-HTTP calls use a copied/internally created client, disabled redirects, a 30-second
-context timeout, nonreplayable POST bodies, and a 1-MiB response limit. Only private
+Lazy creation captures environment credentials only when no config is provided.
+Configuration validation errors are retained on the client for operations to
+report. It starts no worker until first token use. Initial lazy auth uses the
+same flight as renewal; its lifetime is independent of waiter contexts. A failed
+first auth retains the existing terminal/cooldown policy but starts no idle retry
+worker. Registering lifecycle workers under the state lock after first success
+prevents concurrent Close from missing workers. Eager initialization authenticates
+within the supplied context before publishing the client and cleans up on errors.
+
+HTTP calls use a copied/internally created client, disabled redirects, a configured
+per-request context timeout (zero uses the existing 30-second default), nonreplayable POST bodies, and a 1-MiB response limit. Only private
 SDK-owned transport idle connections are closed. Consumer transports must honor
 cancellation and avoid retrying service POSTs. See [authentication](AUTHENTICATION.md)
 for exact renewal/backoff policy and [errors](ERROR_HANDLING.md) for uncertainty.
@@ -35,6 +47,8 @@ No provider capability is inferred from other SDKs.
 
 | Topic | Resolution |
 |---|---|
+| Earlier eager `New(ctx, Config)` build/lifecycle requirement | Owner-requested API revision supersedes it; `New` is lazy, `NewWithContext` eager; no provider change inferred |
+| Fixed 30-second request timeout | Preserve it as the zero-value default; allow positive `Config.Timeout` per HTTP request |
 | Overview `3600 ms` vs one-hour/auth seconds | Interpret actual positive `expire` as integer seconds; never hardcode 3,600 |
 | Top-up string sample vs numeric schema | Send a JSON number; `int64` whole-kip choice is SDK policy |
 | Top-up minimum | Enforce 10,000 from the field description; assume no maximum/denomination |

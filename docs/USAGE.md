@@ -8,14 +8,17 @@ minimum and locally verified toolchain are Go 1.27.1. See the complete
 
 | `Config` field | Default | Contract |
 |---|---|---|
-| `ClientID` | Required | Nonblank; sent unchanged in authentication JSON |
-| `ClientSecret` | Required | Nonblank; sent unchanged only to token endpoint |
+| `ClientID` | Environment only for `New()` | Nonblank; sent unchanged in authentication JSON |
+| `ClientSecret` | Environment only for `New()` | Nonblank; sent unchanged only to token endpoint |
 | `BaseURL` | `https://api.telbiz.la` | Absolute origin; optional trailing slash; no credentials, query, fragment, or path prefix |
 | `HTTPClient` | Private standard HTTP client/transport | Copied; caller's client and transport are never mutated or closed |
+| `Timeout` | 30 seconds when zero | Per-HTTP-request bound for authentication, renewal, SMS, and top-up; negative values invalid |
 | `RefreshBefore` | 60 seconds when zero | Nonnegative; actual lead is capped at half the returned token lifetime |
 
-`RequestTimeout` is a constant 30 seconds. Every call applies this bound through
-its request context. An earlier caller deadline or injected client timeout wins.
+`RequestTimeout` is the 30-second default for `Config.Timeout`. Each HTTP request
+applies the configured bound through its context, including with injected clients.
+An earlier caller deadline or injected client timeout wins. Shared authentication
+has its own timeout; a caller's earlier deadline ends only that caller's wait.
 The response body limit is 1 MiB. Configuration is copied at construction; do not
 modify the provided client concurrently with `New`. A later change to the
 original client fields does not configure the SDK's private client copy.
@@ -25,17 +28,26 @@ Keep Client ID/Secret in backend environment variables or a secret manager.
 
 ## Reuse, contexts, and cleanup
 
-`New` authenticates eagerly, so handle its error before using the client.
-Its context only controls initialization. After success, renewal has an
-independent lifecycle context and continues even if startup is canceled.
+`New()` captures credentials from `TELBIZ_CLIENT_ID` and `TELBIZ_CLIENT_SECRET`.
+`New(config)` uses the config's credentials exactly; missing values never fall
+back to the environment. Both make no network request and start no worker until
+a token is needed. `SendSMS`, `Topup`, and `RefreshToken` report stored configuration
+errors with `ErrValidation` and `Error.Field`, or first-authentication failures
+with `ErrAuthentication`. Supplying more than one config reports field `Config`.
+
+`NewWithContext(ctx, config)` validates and authenticates immediately, returning
+errors directly. Its nonnil context controls initialization only. After the first
+successful authentication through either constructor, renewal has an independent
+lifecycle context and continues even if startup or the first caller is canceled.
 Reuse one client for concurrent service calls and defer `Close()` immediately.
 Do not use the zero value of `Client` or copy an initialized client.
 
 Pass a nonnil context to each operation. A canceled service context stops that
 call, including its token wait. A canceled `RefreshToken` context stops only that
 waiter; shared authentication continues for other callers until its HTTP timeout
-or `Close`. No new service call is admitted after closure. An admitted service
-call may still finish, so keep and cancel its own context if shutdown requires
+or `Close`. Closing before first use is safe and prevents later authentication.
+No new service call is admitted after closure. An admitted service call may still
+finish, so keep and cancel its own context if shutdown requires
 it to stop. `Close` waits for renewal work, not for admitted service calls.
 
 See the [lifecycle example](../examples/lifecycle/main.go) for signal handling.
@@ -43,15 +55,17 @@ Clients renew independently; there is no global or distributed token cache.
 
 ## HTTP customization
 
-Given your own `httpClient` and initialization `ctx`:
+Given your own `httpClient`:
 
 ```go
-client, err := telbiz.New(ctx, telbiz.Config{
+client := telbiz.New(telbiz.Config{
     ClientID: os.Getenv("TELBIZ_CLIENT_ID"),
     ClientSecret: os.Getenv("TELBIZ_CLIENT_SECRET"),
     HTTPClient: httpClient,
+    Timeout: 15 * time.Second,
     RefreshBefore: 2 * time.Minute,
 })
+defer client.Close()
 ```
 
 The SDK overrides redirect handling on its private client copy. Neither token
@@ -95,3 +109,11 @@ flowchart TD
 
 The downstream step is conceptual. No final-status or reconciliation endpoint is
 documented. See [error handling](ERROR_HANDLING.md) before considering repetition.
+
+## Migrating constructor calls
+
+Replace `client, err := telbiz.New(ctx, config)` with
+`client, err := telbiz.NewWithContext(ctx, config)` to preserve eager behavior.
+For lazy creation, use `client := telbiz.New(config)` and handle errors from
+operations. Use named fields in config literals because `Timeout` adds a field.
+All service and manual-refresh methods still require contexts.

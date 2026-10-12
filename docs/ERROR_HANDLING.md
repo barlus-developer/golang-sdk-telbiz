@@ -101,3 +101,13 @@ timeouts, cancellation, or connection failures. A 401 can renew for future calls
 without repeating the current operation. A custom transport must uphold the same
 rule. [Authentication retry policy](AUTHENTICATION.md#failures-and-retry-policy)
 applies solely to token requests.
+
+## Constructor errors
+
+`New()` and `New(config)` return a client immediately. Inspect errors from
+`SendSMS`, `Topup`, or `RefreshToken`: invalid config matches `ErrValidation` and
+`Error.Field` names the field (`Config` for more than one argument). First-use
+authentication failure matches `ErrAuthentication`; no service was submitted and
+its outcome is not unknown. Invalid config cannot be repaired by changing the
+original Config or environment; create a new client. `Close` remains safe.
+`NewWithContext(ctx, config)` returns validation/authentication errors directly.

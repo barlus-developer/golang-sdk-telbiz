@@ -55,15 +55,9 @@ func run() error {
     }
     ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
     defer cancel()
-    client, err := telbiz.New(ctx, telbiz.Config{
-        ClientID: os.Getenv("TELBIZ_CLIENT_ID"),
-        ClientSecret: os.Getenv("TELBIZ_CLIENT_SECRET"),
-    })
-    if err != nil {
-        return err
-    }
+    client := telbiz.New() // Reads credentials; makes no network request.
     defer client.Close()
-    _, err = client.SendSMS(ctx, telbiz.SMSRequest{
+    _, err := client.SendSMS(ctx, telbiz.SMSRequest{
         Title: telbiz.TitleOTP, Phone: phone, Message: message,
     })
     if err != nil {
@@ -96,16 +90,50 @@ result, err := client.Topup(ctx, telbiz.TopupRequest{
 
 ## Client behavior
 
-`New(ctx, Config)` authenticates immediately. Reuse one client across goroutines.
-It caches the access token and renews while idle, normally 60 seconds before
-expiry. The lead is clamped to half the returned lifetime. Renewal uses the same
-Client ID and Secret; it does not rotate credentials. `RefreshToken(ctx)` forces
-renewal or joins work in progress, subject to transient failure cooldown.
+`New()` reads `TELBIZ_CLIENT_ID` and `TELBIZ_CLIENT_SECRET` once at construction.
+`New(config)` uses only the explicit credentials. Both return a client without
+network activity; the first `SendSMS`, `Topup`, or `RefreshToken` authenticates.
+Invalid configuration and authentication failures are returned by operations;
+use `errors.Is`/`errors.As` to inspect them. More than one config is invalid.
 
-The constructor context controls initialization only. Always call `Close()`;
-it stops renewal and is safe to call repeatedly. Already admitted service calls
-may complete under their own contexts. Every HTTP request has a 30-second bound,
-even with an injected HTTP client.
+```go
+client := telbiz.New(telbiz.Config{
+    ClientID: "YOUR_CLIENT_ID",
+    ClientSecret: "YOUR_CLIENT_SECRET",
+    Timeout: 15 * time.Second,
+})
+defer client.Close()
+```
+
+For immediate validation and authentication with an initialization context:
+
+```go
+client, err := telbiz.NewWithContext(ctx, config)
+if err != nil {
+    return err
+}
+defer client.Close()
+```
+
+**Compatibility change:** migrate old `New(ctx, config)` calls to
+`NewWithContext(ctx, config)` to retain eager authentication. Switching to `New`
+also moves initialization errors to the first operation. Adding `Config.Timeout`
+requires callers using positional config literals to migrate to named fields.
+
+Reuse one client across goroutines. Concurrent first calls share authentication;
+canceling a caller ends its wait without canceling shared work. After the first
+successful authentication, the token renews while idle, normally 60 seconds
+before expiry. The lead is clamped to half the returned lifetime. Renewal uses
+the same credentials. `RefreshToken(ctx)` forces renewal or joins work in progress,
+subject to transient failure cooldown.
+
+`NewWithContext`'s context controls initialization only. Always call `Close()`;
+it is idempotent and safe before first use, prevents later authentication, and
+stops client-owned workers. Already admitted service calls may finish under their
+own contexts. `Config.Timeout` bounds each authentication, renewal, SMS, and
+top-up HTTP request; zero uses the existing 30-second `RequestTimeout` default,
+and negative values are invalid. Earlier caller deadlines and injected client
+timeouts win. The bound also applies to injected HTTP clients without mutation.
 
 SMS and top-up calls submit once. They are never replayed automatically after
 401s, redirects, transport failures, or provider errors. Inspect errors and

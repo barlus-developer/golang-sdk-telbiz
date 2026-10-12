@@ -8,15 +8,19 @@ import (
 // DefaultBaseURL is the documented Telbiz API origin.
 const DefaultBaseURL = "https://api.telbiz.la"
 
-// RequestTimeout bounds every SDK HTTP request, including injected clients.
+// RequestTimeout is the default per-HTTP-request timeout when Config.Timeout is zero.
 const RequestTimeout = 30 * time.Second
 
-// Config is copied by New and must not be modified concurrently with New.
+// Config is copied at construction. Explicit credentials never fall back to
+// environment values. Do not modify an HTTPClient concurrently with construction.
 type Config struct {
 	ClientID     string
 	ClientSecret string
 	BaseURL      string
 	HTTPClient   *http.Client
+	// Timeout bounds each HTTP request, including authentication and renewal.
+	// Zero uses RequestTimeout (30 seconds); negative values are invalid.
+	Timeout time.Duration
 	// RefreshBefore defaults to 60 seconds and is clamped to half the lifetime.
 	RefreshBefore time.Duration
 }

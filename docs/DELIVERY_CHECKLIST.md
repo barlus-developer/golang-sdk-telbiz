@@ -1,14 +1,22 @@
 # Delivery Checklist
 
-Local implementation completed 2026-10-12. Evidence below uses Go 1.27.1 on
-linux/amd64. Verification uses fabricated inputs and local mocks only.
+Local implementation and constructor update completed 2026-10-12 on branch
+`alpha-0.1`. The constructor update began with a clean Git status and modified
+the existing SDK. Evidence uses Go 1.27.1 on linux/amd64 and fabricated inputs/local
+mocks only. Historical baseline evidence is labeled separately below.
 
 ## Implementation
 
 - [x] Inspect existing module/API/license/instructions and preserve unrelated work.
   Discovery Git status was clean; the subsequently appearing `go.mod` was preserved.
 - [x] Module `github.com/barlus-developer/golang-sdk-telbiz`, package `telbiz`.
-- [x] Typed configuration, eager `New`, context-aware public calls.
+- [x] Lazy `New(config ...Config) *Client` and eager `NewWithContext(ctx, config)`.
+- [x] Environment credentials captured only by zero-config `New`; explicit config
+  never falls back. Deferred inspectable config/auth errors; invalid arity rejected.
+- [x] Configured per-request timeout for auth, renewal, SMS/top-up; zero retains
+  30 seconds, negatives invalid; earlier deadlines and injected client bounds win.
+- [x] Single shared first-use auth independent of caller cancellation; start idle
+  renewal only after first success. Safe Close before/during use and startup races.
 - [x] Automatic idle renewal at 60 seconds before normal expiry.
 - [x] Short lifetime clamp, single shared auth, bounded backoff, concurrent Close.
 - [x] Typed SMS/top-up schemas, input validation, accepted results, safe errors.
@@ -40,7 +48,55 @@ linux/amd64. Verification uses fabricated inputs and local mocks only.
 - [x] Final evidence distinguishes SDK validation from provider unknowns.
 - [x] No remote push, Git commit/tag, or release publication performed.
 
-## Exact verification evidence
+## Constructor update: exact verification evidence
+
+These checks ran on the final Go source revision for this constructor update.
+Mock tests passed outside the sandbox; no example program was executed.
+
+| Command/check | Result | Evidence |
+|---|---|---|
+| `go version` | Passed | `go version go1.27.1 linux/amd64`; module unchanged |
+| `gofmt -l .` | Passed | No output, including new `constructor_test.go` |
+| `go test ./...` | Passed | Root `ok` (final invocation cached); four example packages compile; earlier uncached run also passed |
+| `go test -race ./...` | Passed | Root `ok` in 1.097s; no race reports; example packages compile |
+| `go vet ./...` | Passed | Exit 0, no output |
+| `go build ./examples/...` | Passed | Exit 0; all four programs compiled only |
+| `go build -o /tmp/telbiz-constructor-readme-check /tmp/telbiz-constructor-readme-check.go` | Passed | Complete updated README program extracted and compiled only |
+| `git diff --check` | Passed | Exit 0, no whitespace errors |
+| `go doc New`, `go doc NewWithContext`, `go doc Config` | Passed | Signatures/defaults match public API docs |
+| Relative Markdown path review with Python `pathlib` | Passed | 60 relative path targets resolve; heading anchors excluded in this update's check |
+| `git diff -- LICENSE docs/TELBIZ_API_REFERENCE.md go.mod` | Passed | No changes to license, provider snapshot, or Go/module policy |
+
+New deterministic/mock tests cover both constructors, environment capture and
+explicit credentials, deferred configuration errors and excess arguments,
+first-use coordination across SMS/top-up/manual calls, independent cancellation,
+idle renewal after first success, terminal recovery and transient first-use
+cooldown, pre-canceled/invalid operations without authentication, all configured
+HTTP timeouts and earlier caller deadlines, injected client immutability,
+Close before/during initialization, and races between initial success and shutdown.
+The existing lifecycle/wire/no-replay suite remains in place with eager call sites
+migrated to `NewWithContext`. See [TESTING.md](TESTING.md) for named tests.
+
+Compatibility changes: old `New(ctx, config)` calls must use `NewWithContext` to
+retain eager behavior. `New` now reports initialization errors through operations.
+The additional `Config.Timeout` field requires positional config literals to
+migrate to named fields. Existing service methods retain their contexts and
+never automatically replay submissions.
+
+Restrictions during this update: the first sandboxed test attempt encountered a
+read-only Go-cache entry and a call-site rename error (`errors.NewWithContext`),
+which was corrected. A later sandboxed test attempt could not bind local
+`httptest` listeners (`socket: operation not permitted`). These attempts are not
+passes; the final unit/race checks succeeded with approved execution outside the
+sandbox. Vet, example/README builds, and formatting succeeded inside the sandbox.
+The requested skill search initially hit registry DNS restrictions, then succeeded
+with approved network access; the already installed Go design patterns skill was
+used. No dependency or skill installation was added to the repository.
+
+## Baseline verification evidence (historical)
+
+The following table records the earlier implementation delivery; additional
+baseline-only checks were not rerun as part of this constructor update.
 
 | Command/check | Final result | Evidence |
 |---|---|---|

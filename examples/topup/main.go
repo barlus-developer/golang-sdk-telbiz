@@ -26,10 +26,7 @@ func run() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	client, err := telbiz.New(ctx, telbiz.Config{ClientID: os.Getenv("TELBIZ_CLIENT_ID"), ClientSecret: os.Getenv("TELBIZ_CLIENT_SECRET")})
-	if err != nil {
-		return err
-	}
+	client := telbiz.New() // Reads credentials once; authenticates on first use.
 	defer client.Close()
 	_, err = client.Topup(ctx, telbiz.TopupRequest{Phone: phone, Amount: amount})
 	if err != nil {

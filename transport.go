@@ -62,7 +62,7 @@ func (c *Client) post(ctx context.Context, op, path, token string, body any, ser
 	if err != nil {
 		return nil, 0, &Error{Kind: ErrValidation, Operation: op, cause: err}
 	}
-	ctx, cancel := context.WithTimeout(ctx, RequestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, c.cfg.Timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(b))
 	if err != nil {

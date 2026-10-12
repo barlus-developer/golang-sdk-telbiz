@@ -40,7 +40,7 @@ func TestIdleRenewalSchedule(t *testing.T) {
 				})
 				cfg.RefreshBefore = tc.lead
 				initCtx, cancel := context.WithCancel(context.Background())
-				c, err := New(initCtx, cfg)
+				c, err := NewWithContext(initCtx, cfg)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -125,7 +125,7 @@ func TestSlowAuthenticationScheduling(t *testing.T) {
 		}
 	})
 	synctest.Test(t, func(t *testing.T) {
-		c, err := New(context.Background(), mockConfig(func(*http.Request) (*http.Response, error) {
+		c, err := NewWithContext(context.Background(), mockConfig(func(*http.Request) (*http.Response, error) {
 			time.Sleep(2 * time.Second)
 			return mockResponse(200, authBody("fake", 1)), nil
 		}))

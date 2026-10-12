@@ -50,17 +50,22 @@ necessary adjustment must be justified and reflected consistently in examples.
 
 | API | Contract |
 |---|---|
-| `New(ctx context.Context, cfg Config) (*Client, error)` | Validate config, authenticate immediately, start background renewal only after success |
+| `New(config ...Config) *Client` | Zero/one config; no network; zero captures environment credentials, explicit config never falls back; defer config/auth errors to operations |
+| `NewWithContext(ctx context.Context, config Config) (*Client, error)` | Validate config, authenticate immediately; initialization-only context; start background renewal only after success |
 | `(*Client).SendSMS(ctx context.Context, req SMSRequest) (*SMSResponse, error)` | Validate, acquire valid token, submit once |
 | `(*Client).Topup(ctx context.Context, req TopupRequest) (*TopupResponse, error)` | Validate, acquire valid token, submit once |
 | `(*Client).RefreshToken(ctx context.Context) error` | Force renewal or join a renewal already running; do not return the token |
 | `(*Client).Close() error` | Stop client-owned background work; idempotent |
 
 `Config` must include `ClientID`, `ClientSecret`, optional `BaseURL`, optional
-`HTTPClient`, and optional `RefreshBefore`. `RefreshBefore == 0` uses 60 seconds;
-negative values are invalid. Use a finite documented request timeout for SDK
-network calls, including with an injected HTTP client. Keep the configuration
-immutable after construction. Never mutate the caller's HTTP client or transport.
+`HTTPClient`, optional `Timeout`, and optional `RefreshBefore`.
+`RefreshBefore == 0` uses 60 seconds;
+negative values are invalid. `Timeout == 0` uses the existing finite 30-second
+`RequestTimeout`; negative values are invalid. Bound each authentication, renewal,
+SMS, and top-up HTTP request, including injected clients, with a request context.
+Earlier caller deadlines win without canceling shared auth. More than one config
+for `New` is invalid and must surface through an inspectable operation error.
+Keep the configuration immutable after construction. Never mutate the caller's HTTP client or transport.
 
 Do not force consumers to supply or manually maintain an access token. An
 exported token getter is unnecessary. A diagnostic metadata API, if added, must
@@ -73,13 +78,7 @@ imports, error handling, and environment-variable credentials are under
 [examples/](examples/) and in the [README](README.md).
 
 ```go
-client, err := telbiz.New(ctx, telbiz.Config{
-    ClientID:     os.Getenv("TELBIZ_CLIENT_ID"),
-    ClientSecret: os.Getenv("TELBIZ_CLIENT_SECRET"),
-})
-if err != nil {
-    return err
-}
+client := telbiz.New() // Capture environment credentials; no network request.
 defer client.Close()
 
 result, err := client.SendSMS(ctx, telbiz.SMSRequest{
@@ -94,13 +93,15 @@ no distributed or cross-process token coordination is promised.
 
 ## 4. Automatic token renewal
 
-Follow `docs/TOKEN_LIFECYCLE.md` in full. Constructor authentication is eager.
-Renew proactively even when the client is idle. With a normal 3,600-second token
-and default configuration, renewal starts 60 seconds before expiry.
+Follow `docs/TOKEN_LIFECYCLE.md` in full. `New` is lazy; `NewWithContext` is eager.
+Coordinate first-use authentication so callers share one bounded request; each
+caller can cancel its wait independently. After the first successful
+authentication, renew proactively even when the client is idle. With a normal
+3,600-second token and default configuration, renewal starts 60 seconds before expiry.
 
 Use one coordinated renewal operation per client, atomic token replacement,
 bounded authentication attempts, safe shared state, and clean shutdown. Treat
-the constructor context as initialization-only after `New` succeeds. Callers
+`NewWithContext`'s context as initialization-only after it succeeds. Callers
 stop the background lifecycle through `Close`, not through a completed startup
 context. A failed renewal must not erase an unexpired token.
 
@@ -214,7 +215,8 @@ standard-library behavior.
 
 1. Inspect the repository, existing API, module, license, instructions, and tests.
 2. Resolve wire-contract models and record uncertainties in implementation notes.
-3. Implement transport/errors and eager authentication with automatic lifecycle.
+3. Update existing transport/errors for lazy `New`, eager `NewWithContext`,
+   configured request timeouts, and the existing automatic lifecycle.
 4. Implement typed SMS and top-up operations with one submission per invocation.
 5. Complete the mock and concurrency tests in `docs/TEST_PLAN.md`.
 6. Create all documentation, examples, repository support files, and CI.
@@ -226,11 +228,22 @@ continue independent work and report precisely what remains unverified. Release
 readiness remains pending if licensing is unresolved; that need not block local
 implementation and documentation.
 
+## Constructor contract revision
+
+The owner-requested constructor update supersedes the earlier eager
+`New(ctx, Config)` requirement: migrate eager callers to `NewWithContext`.
+`New` now defers initialization to operations. Preserve the existing flat package,
+private flight coordination, backoff, short lifetimes, token replacement, contexts
+on services, and no service replay. Start renewal only after first success;
+`Close` before/during initialization prevents later work and token installation.
+Adding `Config.Timeout` requires positional config literals to use named fields.
+The provider snapshot and wire capabilities are unchanged.
+
 ## 9. Delivered implementation
 
 The public API above is implemented in the root `telbiz` package with no external
 dependencies. The pre-existing-at-implementation `go.mod` specifies Go 1.27.1 and
-was preserved. All five client entry points, typed request/result models, safe
+was preserved. All six client entry points, typed request/result models, safe
 inspectable errors, single shared renewal, capped backoff, and no service replay
 are implemented. Token validity is checked both during response processing and
 at installation/admission.

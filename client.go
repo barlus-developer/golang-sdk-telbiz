@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,69 +36,114 @@ type authFlight struct {
 	err  error
 }
 
-// Client is safe for concurrent use. Construct it with New; the zero value is
-// not usable. Reuse one client, then call Close to stop its background work.
+// Client is safe for concurrent use. Construct it with New or NewWithContext;
+// the zero value is not usable. Reuse it, then Close to stop its background work.
 type Client struct {
-	mu          sync.Mutex
-	cfg         Config
-	base        string
-	http        *http.Client
-	owned       *http.Transport
-	clock       clock
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wake        chan struct{}
-	wg          sync.WaitGroup
-	closeDone   chan struct{}
-	closed      bool
-	token       tokenState
-	flight      *authFlight
-	lastErr     error
-	nextAttempt time.Time
-	failures    uint
-	terminal    bool
+	mu               sync.Mutex
+	cfg              Config
+	base             string
+	http             *http.Client
+	owned            *http.Transport
+	clock            clock
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wake             chan struct{}
+	wg               sync.WaitGroup
+	closeDone        chan struct{}
+	closed           bool
+	initErr          error
+	lifecycleStarted bool
+	token            tokenState
+	flight           *authFlight
+	lastErr          error
+	nextAttempt      time.Time
+	failures         uint
+	terminal         bool
 }
 
-// New validates configuration and authenticates immediately. Its context governs
-// initialization only; a successful client's lifecycle ends through Close.
-func New(ctx context.Context, cfg Config) (*Client, error) {
+// New creates a client without making a network request. With no config it reads
+// TELBIZ_CLIENT_ID and TELBIZ_CLIENT_SECRET once; one config uses only its values.
+// Configuration errors (including more than one config) are returned by operations.
+// The first token-requiring operation authenticates; callers share that work.
+// Call Close even if the client has not been used.
+func New(config ...Config) *Client {
+	var cfg Config
+	switch len(config) {
+	case 0:
+		cfg.ClientID = os.Getenv("TELBIZ_CLIENT_ID")
+		cfg.ClientSecret = os.Getenv("TELBIZ_CLIENT_SECRET")
+	case 1:
+		cfg = config[0]
+	default:
+		c := newLazyClient(Config{}, realClock{})
+		c.initErr = validation("new", "Config")
+		return c
+	}
+	return newLazyClient(cfg, realClock{})
+}
+
+// NewWithContext validates configuration and authenticates immediately. It uses
+// only cfg's credentials. ctx governs initialization only; after success the
+// client's independent lifecycle ends through Close.
+func NewWithContext(ctx context.Context, cfg Config) (*Client, error) {
 	return newClient(ctx, cfg, realClock{})
 }
 
-func newClient(ctx context.Context, cfg Config, clk clock) (*Client, error) {
-	if ctx == nil {
-		return nil, validation("new", "Context")
-	}
+func normalizeConfig(cfg Config) (Config, string, error) {
 	if strings.TrimSpace(cfg.ClientID) == "" {
-		return nil, validation("new", "ClientID")
+		return cfg, "", validation("new", "ClientID")
 	}
 	if strings.TrimSpace(cfg.ClientSecret) == "" {
-		return nil, validation("new", "ClientSecret")
+		return cfg, "", validation("new", "ClientSecret")
 	}
 	if cfg.RefreshBefore < 0 {
-		return nil, validation("new", "RefreshBefore")
+		return cfg, "", validation("new", "RefreshBefore")
+	}
+	if cfg.Timeout < 0 {
+		return cfg, "", validation("new", "Timeout")
+	}
+	if cfg.Timeout == 0 {
+		cfg.Timeout = RequestTimeout
 	}
 	if cfg.RefreshBefore == 0 {
 		cfg.RefreshBefore = time.Minute
 	}
 	base, err := baseURL(cfg.BaseURL)
+	return cfg, base, err
+}
+
+func newLazyClient(cfg Config, clk clock) *Client {
+	cfg, base, err := normalizeConfig(cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	c := &Client{cfg: cfg, base: base, initErr: err, clock: clk, ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), closeDone: make(chan struct{})}
 	if err != nil {
-		return nil, err
+		return c
 	}
-	c := &Client{cfg: cfg, base: base, clock: clk, wake: make(chan struct{}, 1), closeDone: make(chan struct{})}
 	if cfg.HTTPClient != nil {
 		copyClient := *cfg.HTTPClient
 		c.http = &copyClient
 	} else {
 		c.owned = &http.Transport{
 			Proxy:             http.ProxyFromEnvironment,
-			DialContext:       (&net.Dialer{Timeout: RequestTimeout, KeepAlive: 30 * time.Second}).DialContext,
+			DialContext:       (&net.Dialer{Timeout: cfg.Timeout, KeepAlive: 30 * time.Second}).DialContext,
 			ForceAttemptHTTP2: true, MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second,
 			TLSHandshakeTimeout: 10 * time.Second, ExpectContinueTimeout: time.Second,
 		}
 		c.http = &http.Client{Transport: c.owned}
 	}
 	c.http.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return c
+}
+
+func newClient(ctx context.Context, cfg Config, clk clock) (*Client, error) {
+	if ctx == nil {
+		return nil, validation("new", "Context")
+	}
+	c := newLazyClient(cfg, clk)
+	if c.initErr != nil {
+		c.Close()
+		return nil, c.initErr
+	}
 	tok, err := c.authenticate(ctx)
 	if err == nil {
 		err = c.checkTokenInstallation(tok)
@@ -106,17 +152,23 @@ func newClient(ctx context.Context, cfg Config, clk clock) (*Client, error) {
 		err = authenticationError(ctx.Err())
 	}
 	if err != nil {
-		if c.owned != nil {
-			c.owned.CloseIdleConnections()
-		}
+		c.Close()
 		return nil, err
 	}
 	tok.generation = 1
 	c.token = tok
-	c.ctx, c.cancel = context.WithCancel(context.Background())
+	c.startLifecycleLocked()
+	return c, nil
+}
+
+// Called before publication or under mu. Register workers before Close can wait.
+func (c *Client) startLifecycleLocked() {
+	if c.lifecycleStarted {
+		return
+	}
+	c.lifecycleStarted = true
 	c.wg.Add(1)
 	go c.lifecycle()
-	return c, nil
 }
 
 func (c *Client) authenticate(ctx context.Context) (tokenState, error) {
@@ -199,6 +251,9 @@ func (c *Client) beginRefreshLocked(force bool) (*authFlight, error) {
 	if c.closed {
 		return nil, ErrClosed
 	}
+	if c.initErr != nil {
+		return nil, c.initErr
+	}
 	if c.flight != nil {
 		return c.flight, nil
 	}
@@ -226,6 +281,7 @@ func (c *Client) runRefresh(f *authFlight) {
 		c.token = tok
 		c.lastErr, c.terminal, c.failures = nil, false, 0
 		c.nextAttempt = time.Time{}
+		c.startLifecycleLocked()
 	} else {
 		c.lastErr, f.err = err, err
 		c.terminal = !transientAuthentication(err)

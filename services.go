@@ -74,7 +74,7 @@ func (c *Client) checkOpen() error {
 	if c.closed {
 		return ErrClosed
 	}
-	return nil
+	return c.initErr
 }
 
 func (c *Client) submit(ctx context.Context, op, path string, req any) (Result, TransactionKey, error) {

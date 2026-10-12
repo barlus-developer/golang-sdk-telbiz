@@ -20,11 +20,7 @@ func ExampleClient_SendSMS() {
 		io.WriteString(w, `{"response":{"code":"SENDING_SMS_INPROGRESS","success":true},"key":{"partitionKey":"","rangeKey":""}}`)
 	}))
 	defer server.Close()
-	client, err := telbiz.New(context.Background(), telbiz.Config{ClientID: "fake-client", ClientSecret: "fake-secret", BaseURL: server.URL})
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	client := telbiz.New(telbiz.Config{ClientID: "fake-client", ClientSecret: "fake-secret", BaseURL: server.URL})
 	defer client.Close()
 	result, err := client.SendSMS(context.Background(), telbiz.SMSRequest{Title: telbiz.TitleInfo, Phone: "2012345678", Message: "Fabricated example"})
 	if err != nil {
