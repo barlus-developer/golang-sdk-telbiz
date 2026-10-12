@@ -1,6 +1,10 @@
 # Telbiz Go SDK — Build Specification
 
-Status: implementation brief, not a completed SDK. Prepared 2026-10-12.
+Status: local SDK implementation, tests, examples, documentation, and CI delivered.
+Prepared 2026-10-12; implementation evidence is recorded in
+[docs/DELIVERY_CHECKLIST.md](docs/DELIVERY_CHECKLIST.md). This document retains the
+build and acceptance requirements. Live provider compatibility and remote CI
+execution have not been established; no release or remote push was performed.
 
 ## 1. Objective
 
@@ -64,9 +68,9 @@ exclude token strings and credentials.
 
 ### Illustrative consumer usage
 
-This is the intended shape, not a currently runnable implementation. The agent
-must create complete compilable examples with imports, error handling, and
-environment-variable credentials after implementation.
+This excerpt illustrates the implemented API. Complete compilable examples with
+imports, error handling, and environment-variable credentials are under
+[examples/](examples/) and in the [README](README.md).
 
 ```go
 client, err := telbiz.New(ctx, telbiz.Config{
@@ -221,3 +225,24 @@ the entire authorized local delivery. If external access or tools block checks,
 continue independent work and report precisely what remains unverified. Release
 readiness remains pending if licensing is unresolved; that need not block local
 implementation and documentation.
+
+## 9. Delivered implementation
+
+The public API above is implemented in the root `telbiz` package with no external
+dependencies. The pre-existing-at-implementation `go.mod` specifies Go 1.27.1 and
+was preserved. All five client entry points, typed request/result models, safe
+inspectable errors, single shared renewal, capped backoff, and no service replay
+are implemented. Token validity is checked both during response processing and
+at installation/admission.
+
+The [API reference](docs/API.md), [usage guide](docs/USAGE.md),
+[authentication guide](docs/AUTHENTICATION.md), [error guide](docs/ERROR_HANDLING.md),
+[test mapping](docs/TESTING.md), [implementation notes](docs/IMPLEMENTATION_NOTES.md),
+and [release guide](docs/RELEASING.md) describe the final behavior. Four standalone
+examples cover SMS, top-up, manual renewal, and cancellation/lifecycle. Package
+examples use local mocks. CI compiles examples without running live operations.
+The existing MIT license and repository templates are preserved.
+
+See [delivery evidence](docs/DELIVERY_CHECKLIST.md) for exact local checks and
+remaining external verification. No live compatibility, final fulfillment,
+remote CI success, or release publication is claimed.

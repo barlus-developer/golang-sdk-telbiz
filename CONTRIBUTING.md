@@ -1,13 +1,14 @@
 # Contributing
 
-This repository targets an unofficial Go SDK for Telbiz. Until implementation is
-complete, `BUILD_SDK.md` and the documents under `docs/` define the intended API.
-Do not describe planned functions or checks as already implemented or passing.
+This repository implements an unofficial Go SDK for Telbiz. `BUILD_SDK.md` and
+the provider/lifecycle documents define its contract. See [API docs](docs/API.md)
+and [delivery evidence](docs/DELIVERY_CHECKLIST.md) for implemented behavior and
+actual checks. Do not describe unverified behavior as passing.
 
 ## Development
 
-Read `AGENTS.md`, the provider reference, lifecycle contract, and test plan. Once
-`go.mod` exists, use the repository's documented supported Go toolchain and run:
+Read `AGENTS.md`, the provider reference, lifecycle contract, and test plan.
+Use Go 1.27.1, matching the preserved `go.mod` and verified local toolchain, and run:
 
 ```bash
 go mod download
@@ -21,6 +22,12 @@ Format Go code with `gofmt`. Keep dependencies minimal. Use local mock servers,
 controlled time, and fabricated test inputs. Never run live SMS/top-up requests
 in tests or CI. Store local credentials in ignored environment files or a secret
 manager; `.env.example` must contain empty placeholders only.
+
+Before staging newly created Go sources, `gofmt -l .` must produce no output.
+Lifecycle tests use `testing/synctest` to advance time deterministically. See
+[testing guidance](docs/TESTING.md) for scenario-to-test mapping. Example programs
+are compiled only during checks; explicitly executing SMS/top-up examples is
+billable. The SDK currently has no third-party dependencies.
 
 ## Changes and pull requests
 
@@ -43,5 +50,5 @@ responses in issues, logs, commits, or screenshots. Report vulnerabilities using
 
 Follow the existing repository license. If absent, the owner must choose one;
 contributors and agents must not add an assumed license grant. Release preparation
-and publication follow `docs/RELEASING.md` once written. A prepared release is not
+and publication follow `docs/RELEASING.md`. A prepared release is not
 authorization to push tags or publish.

@@ -13,9 +13,10 @@ real phone numbers, or SMS/OTP content.
 
 ## Supported versions
 
-This handoff does not establish published or supported releases. The maintainer
-must update this section when releases and maintenance policy exist. No response
-time or support commitment is implied by this template.
+This implementation does not establish a published-release support policy. The
+maintainer must update this section when releases and maintenance policy exist.
+The locally verified toolchain is Go 1.27.1. No response time or support commitment
+is implied.
 
 ## Credential and transport handling
 

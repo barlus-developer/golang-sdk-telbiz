@@ -1,0 +1,11 @@
+# Credentials and environment files
+.env
+.env.*
+!.env.example
+
+# Go build/test output
+/bin/
+/dist/
+*.test
+*.out
+coverage.*

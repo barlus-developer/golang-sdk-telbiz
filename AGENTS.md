@@ -6,6 +6,16 @@ Build and document the unofficial Telbiz Go SDK for module
 `github.com/barlus-developer/golang-sdk-telbiz`, package `telbiz`.
 Complete `BUILD_SDK.md` and `docs/DELIVERY_CHECKLIST.md`.
 
+## Current layout
+
+The implementation is one root `telbiz` package. `client.go` and `clock.go` own
+the private authentication lifecycle, `transport.go` HTTP/envelope internals,
+`services.go` validation/submission, and `models.go`/`errors.go` the public types.
+Go 1.27.1 is specified in the preserved `go.mod`. Tests use local `httptest`
+servers and `testing/synctest` fake time. `examples/` programs must be compiled,
+not executed with live credentials during checks. See `docs/TESTING.md` and the
+delivery checklist for validation evidence and `docs/API.md` for the public API.
+
 ## Read first
 
 Read the existing repository instructions and inspect Git status before edits.
