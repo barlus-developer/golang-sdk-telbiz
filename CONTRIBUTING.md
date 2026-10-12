@@ -1,0 +1,47 @@
+# Contributing
+
+This repository targets an unofficial Go SDK for Telbiz. Until implementation is
+complete, `BUILD_SDK.md` and the documents under `docs/` define the intended API.
+Do not describe planned functions or checks as already implemented or passing.
+
+## Development
+
+Read `AGENTS.md`, the provider reference, lifecycle contract, and test plan. Once
+`go.mod` exists, use the repository's documented supported Go toolchain and run:
+
+```bash
+go mod download
+go test ./...
+go test -race ./...
+go vet ./...
+go build ./examples/...
+```
+
+Format Go code with `gofmt`. Keep dependencies minimal. Use local mock servers,
+controlled time, and fabricated test inputs. Never run live SMS/top-up requests
+in tests or CI. Store local credentials in ignored environment files or a secret
+manager; `.env.example` must contain empty placeholders only.
+
+## Changes and pull requests
+
+Use a focused branch and explain the behavior change. Include relevant tests,
+documentation, examples, and an Unreleased changelog entry. Preserve existing
+API compatibility unless an intentional breaking change is documented. Discuss
+public API and dependency changes in the PR description. Never invent provider
+routes or guarantees to complete a feature.
+
+For authentication changes, verify renewal scheduling, shared refresh, failure
+backoff, cancellation, and shutdown with race tests. For service changes, prove
+that a call does not automatically replay a billable POST.
+
+Use the PR template and report actual validation results. Do not include client
+secrets, bearer tokens, real recipients, message/OTP content, or sensitive raw
+responses in issues, logs, commits, or screenshots. Report vulnerabilities using
+`SECURITY.md`.
+
+## Licensing and releases
+
+Follow the existing repository license. If absent, the owner must choose one;
+contributors and agents must not add an assumed license grant. Release preparation
+and publication follow `docs/RELEASING.md` once written. A prepared release is not
+authorization to push tags or publish.
