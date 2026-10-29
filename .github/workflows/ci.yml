@@ -1,0 +1,38 @@
+name: Go SDK checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Check formatting
+        shell: bash
+        run: |
+          files=$(git ls-files -- '*.go')
+          unformatted=$(gofmt -l $files)
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+      - name: Mock tests
+        run: go test ./...
+      - name: Race detector
+        run: go test -race ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Compile examples without running them
+        run: go build ./examples/...
